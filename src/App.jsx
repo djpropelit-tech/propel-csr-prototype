@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Home, CalendarDays, Award, User, Bell, ChevronLeft, MapPin, Clock,
   Users, IndianRupee, CheckCircle2, XCircle, PlusCircle, ClipboardList,
@@ -10,6 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart,
   Pie, Cell, CartesianGrid
 } from "recharts";
+import { useCsrData } from "./hooks/useCsrData.js";
 
 /* ---------------------------------------------------------------
    DESIGN TOKENS — Propel CSR App
@@ -39,7 +40,7 @@ const CATS = [
   { name: "Community Development", color: "#3C6E91" },
 ];
 
-const catColor = (name) => (CATS.find((c) => c.name === name) || CATS[0]).color;
+const catColor = (name, options = CATS) => (options.find((c) => c.name === name) || options[0] || CATS[0]).color;
 
 /* ---------------------------------------------------------------
    MOCK DATA
@@ -211,7 +212,7 @@ const initialEmployees = [
   { empId: "PI-01290", name: "Suresh Babu R", mobile: "+91 98xxxxxx99", email: "sureshbabu.r@propelind.com", department: "Cybersecurity", location: "Coimbatore", designation: "Cybersecurity Lead", manager: "Ganesan", isVolunteer: false },
 ];
 
-const budgetCategories = [
+const fallbackBudgetCategories = [
   { name: "Education", allocated: 1000000, utilized: 350000 },
   { name: "Health & Hygiene", allocated: 800000, utilized: 200000 },
   { name: "Environment", allocated: 500000, utilized: 125000 },
@@ -275,10 +276,10 @@ function StatusPill({ status }) {
   );
 }
 
-function CatTag({ name }) {
+function CatTag({ name, categoryOptions = CATS }) {
   return (
     <span
-      style={{ background: catColor(name) + "1A", color: catColor(name) }}
+      style={{ background: catColor(name, categoryOptions) + "1A", color: catColor(name, categoryOptions) }}
       className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full"
     >
       {name}
@@ -456,35 +457,41 @@ function LoginScreen({ onLogin }) {
 /* ---------------------------------------------------------------
    VOLUNTEER PERSONA
 ----------------------------------------------------------------*/
-function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNotifications }) {
+function VolunteerApp({ events, needs, notifications, currentUser, categoryOptions, leaderboard, onRegister, onWithdraw, onSubmitNeed }) {
   const [tab, setTab] = useState("home");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [catFilter, setCatFilter] = useState("All");
   const [showNeedForm, setShowNeedForm] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const me = "Ganesan";
+  const me = currentUser?.name || "Ganesan";
+  const cats = categoryOptions?.length ? categoryOptions : CATS;
   const myRegs = events.filter((e) => e.applicants.some((a) => a.name === me));
   const totalHours = 22;
   const totalEvents = 4;
   const points = 480;
   const unread = notifications.filter((n) => !n.read).length;
 
-  function register(eventId) {
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.id === eventId
-          ? { ...e, applicants: [...e.applicants, { name: me, dept: "IT", status: "Applied" }], confirmed: e.confirmed }
-          : e
-      )
-    );
+  async function register(eventId) {
+    setBusy(true);
+    try {
+      await onRegister(eventId);
+    } catch (err) {
+      alert(err.message || "Registration failed");
+    } finally {
+      setBusy(false);
+    }
   }
-  function withdraw(eventId) {
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.id === eventId ? { ...e, applicants: e.applicants.filter((a) => a.name !== me) } : e
-      )
-    );
+  async function withdraw(eventId) {
+    setBusy(true);
+    try {
+      await onWithdraw(eventId);
+    } catch (err) {
+      alert(err.message || "Withdraw failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const filteredEvents = events.filter(
@@ -536,7 +543,24 @@ function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNo
   }
 
   if (showNeedForm) {
-    return <NeedForm onBack={() => setShowNeedForm(false)} onSubmit={(n) => { setNeeds((p) => [n, ...p]); setShowNeedForm(false); }} submittedBy={me} />;
+    return (
+      <NeedForm
+        categories={cats}
+        onBack={() => setShowNeedForm(false)}
+        onSubmit={async (n) => {
+          setBusy(true);
+          try {
+            await onSubmitNeed({ ...n, submittedBy: me });
+            setShowNeedForm(false);
+          } catch (err) {
+            alert(err.message || "Failed to submit need");
+          } finally {
+            setBusy(false);
+          }
+        }}
+        busy={busy}
+      />
+    );
   }
 
   if (selectedEvent) {
@@ -549,7 +573,7 @@ function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNo
         <BeltStripe />
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           <div className="flex gap-2">
-            <CatTag name={ev.category} />
+            <CatTag name={ev.category} categoryOptions={cats} />
             <StatusPill status={ev.status} />
           </div>
           <Card>
@@ -625,7 +649,7 @@ function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNo
               <div className="font-bold text-[14px] text-[#1C2B22] mb-2">Open for registration</div>
               <div className="space-y-2.5">
                 {events.filter((e) => e.status === "Registration Open").map((ev) => (
-                  <EventCard key={ev.id} ev={ev} onClick={() => setSelectedEvent(ev.id)} />
+                  <EventCard key={ev.id} ev={ev} categoryOptions={cats} onClick={() => setSelectedEvent(ev.id)} />
                 ))}
               </div>
             </div>
@@ -638,7 +662,7 @@ function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNo
           {Header("CSR Events")}
           <BeltStripe />
           <div className="px-4 pt-3 flex gap-2 overflow-x-auto pb-1">
-            {["All", ...CATS.map((c) => c.name)].map((c) => (
+            {["All", ...cats.map((c) => c.name)].map((c) => (
               <button
                 key={c}
                 onClick={() => setCatFilter(c)}
@@ -655,7 +679,7 @@ function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNo
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
             {filteredEvents.map((ev) => (
-              <EventCard key={ev.id} ev={ev} onClick={() => setSelectedEvent(ev.id)} />
+              <EventCard key={ev.id} ev={ev} categoryOptions={cats} onClick={() => setSelectedEvent(ev.id)} />
             ))}
           </div>
         </>
@@ -677,7 +701,7 @@ function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNo
                 <Card key={ev.id} onClick={() => setSelectedEvent(ev.id)}>
                   <div className="flex justify-between items-start gap-2">
                     <div>
-                      <CatTag name={ev.category} />
+                      <CatTag name={ev.category} categoryOptions={cats} />
                       <div className="font-semibold text-[13px] text-[#1C2B22] mt-1.5">{ev.title}</div>
                       <div className="text-[11px] text-[#74807A] mt-1">{ev.date}</div>
                     </div>
@@ -781,11 +805,11 @@ function VolunteerApp({ events, setEvents, needs, setNeeds, notifications, setNo
   );
 }
 
-function EventCard({ ev, onClick }) {
+function EventCard({ ev, onClick, categoryOptions = CATS }) {
   return (
     <Card onClick={onClick}>
       <div className="flex justify-between items-start gap-2">
-        <CatTag name={ev.category} />
+        <CatTag name={ev.category} categoryOptions={categoryOptions} />
         <StatusPill status={ev.status} />
       </div>
       <div className="font-semibold text-[13.5px] text-[#1C2B22] mt-2 leading-snug">{ev.title}</div>
@@ -798,9 +822,9 @@ function EventCard({ ev, onClick }) {
   );
 }
 
-function NeedForm({ onBack, onSubmit, submittedBy }) {
+function NeedForm({ onBack, onSubmit, categories = CATS, busy }) {
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState(CATS[0].name);
+  const [category, setCategory] = useState(categories[0]?.name || CATS[0].name);
   const [location, setLocation] = useState("");
   const [desc, setDesc] = useState("");
   const [beneficiaries, setBeneficiaries] = useState("");
@@ -829,7 +853,7 @@ function NeedForm({ onBack, onSubmit, submittedBy }) {
         <div>
           <FieldLabel>CSR category</FieldLabel>
           <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-xl border px-3 py-2.5 text-[13px]" style={{ borderColor: COLORS.line }}>
-            {CATS.map((c) => <option key={c.name}>{c.name}</option>)}
+            {categories.map((c) => <option key={c.name}>{c.name}</option>)}
           </select>
         </div>
         <Field label="Location" value={location} onChange={setLocation} placeholder="Village / area" />
@@ -853,14 +877,18 @@ function NeedForm({ onBack, onSubmit, submittedBy }) {
       <div className="p-4 border-t" style={{ borderColor: COLORS.line }}>
         <PrimaryButton
           full
-          disabled={!title || !location}
-          onClick={() =>
-            onSubmit({
-              id: "CN-" + Math.floor(Math.random() * 90 + 23),
-              title, category, location, beneficiaries: beneficiaries || "—",
-              urgency, submittedBy, status: "Submitted",
-            })
-          }
+          disabled={!title || !location || busy}
+          onClick={async () => {
+            await onSubmit({
+              title,
+              category,
+              location,
+              description: desc || title,
+              beneficiaries,
+              urgency,
+            });
+            setDone(true);
+          }}
         >
           Submit need
         </PrimaryButton>
@@ -884,40 +912,80 @@ function Field({ label, value, onChange, placeholder }) {
 /* ---------------------------------------------------------------
    CSR TEAM / COORDINATOR PERSONA
 ----------------------------------------------------------------*/
-function CsrTeamApp({ events, setEvents, needs, setNeeds, approvals, setApprovals, employees, setEmployees }) {
+function CsrTeamApp({ events, needs, approvals, employees, budgetCategories, categoryOptions, coordinatorId, onNeedStatus, onApplicantStatus, onCreateEvent, onAddEmployee }) {
   const [tab, setTab] = useState("dashboard");
   const [openEvent, setOpenEvent] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showEmployeeMaster, setShowEmployeeMaster] = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [empSearch, setEmpSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const cats = categoryOptions?.length ? categoryOptions : CATS;
+  const budgets = budgetCategories?.length ? budgetCategories : fallbackBudgetCategories;
 
   const pendingCount = approvals.filter((a) => a.status === "Pending").length;
-  const totalAllocated = budgetCategories.reduce((s, c) => s + c.allocated, 0);
-  const totalUtilized = budgetCategories.reduce((s, c) => s + c.utilized, 0);
+  const totalAllocated = budgets.reduce((s, c) => s + c.allocated, 0);
+  const totalUtilized = budgets.reduce((s, c) => s + c.utilized, 0);
 
-  function setApplicantStatus(eventId, name, status) {
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.id === eventId
-          ? { ...e, applicants: e.applicants.map((a) => (a.name === name ? { ...a, status } : a)), confirmed: status === "Confirmed" ? e.confirmed + 1 : e.confirmed }
-          : e
-      )
-    );
+  async function setApplicantStatus(eventId, regId, status) {
+    setBusy(true);
+    try {
+      await onApplicantStatus(eventId, regId, status);
+    } catch (err) {
+      alert(err.message || "Failed to update application");
+    } finally {
+      setBusy(false);
+    }
   }
-  function setNeedStatus(id, status) {
-    setNeeds((prev) => prev.map((n) => (n.id === id ? { ...n, status } : n)));
+  async function setNeedStatus(id, status) {
+    setBusy(true);
+    try {
+      await onNeedStatus(id, status);
+    } catch (err) {
+      alert(err.message || "Failed to update need");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (showCreate) {
-    return <CreateEventForm onBack={() => setShowCreate(false)} onCreate={(ev) => { setEvents((p) => [ev, ...p]); setShowCreate(false); }} />;
+    return (
+      <CreateEventForm
+        categories={cats}
+        onBack={() => setShowCreate(false)}
+        onCreate={async (ev) => {
+          setBusy(true);
+          try {
+            await onCreateEvent(ev);
+            setShowCreate(false);
+          } catch (err) {
+            alert(err.message || "Failed to create event");
+          } finally {
+            setBusy(false);
+          }
+        }}
+        busy={busy}
+      />
+    );
   }
 
   if (showAddEmployee) {
     return (
       <AddEmployeeForm
         onBack={() => setShowAddEmployee(false)}
-        onSave={(emp) => { setEmployees((p) => [emp, ...p]); setShowAddEmployee(false); }}
+        onSave={async (emp) => {
+          setBusy(true);
+          try {
+            await onAddEmployee(emp);
+            setShowAddEmployee(false);
+          } catch (err) {
+            alert(err.message || "Failed to save employee");
+          } finally {
+            setBusy(false);
+          }
+        }}
+        busy={busy}
       />
     );
   }
@@ -1009,8 +1077,8 @@ function CsrTeamApp({ events, setEvents, needs, setNeeds, approvals, setApproval
               </div>
               {a.status === "Applied" && (
                 <div className="flex gap-2 mt-2.5">
-                  <GhostButton onClick={() => setApplicantStatus(ev.id, a.name, "Confirmed")}>Confirm</GhostButton>
-                  <GhostButton tone="danger" onClick={() => setApplicantStatus(ev.id, a.name, "Waitlisted")}>Waitlist</GhostButton>
+                  <GhostButton onClick={() => setApplicantStatus(ev.id, a.regId, "Confirmed")}>Confirm</GhostButton>
+                  <GhostButton tone="danger" onClick={() => setApplicantStatus(ev.id, a.regId, "Waitlisted")}>Waitlist</GhostButton>
                 </div>
               )}
             </Card>
@@ -1064,7 +1132,7 @@ function CsrTeamApp({ events, setEvents, needs, setNeeds, approvals, setApproval
             {events.map((ev) => (
               <Card key={ev.id} onClick={() => setOpenEvent(ev.id)}>
                 <div className="flex justify-between items-start gap-2">
-                  <CatTag name={ev.category} />
+                  <CatTag name={ev.category} categoryOptions={cats} />
                   <StatusPill status={ev.status} />
                 </div>
                 <div className="font-semibold text-[13.5px] text-[#1C2B22] mt-2">{ev.title}</div>
@@ -1083,7 +1151,7 @@ function CsrTeamApp({ events, setEvents, needs, setNeeds, approvals, setApproval
             {needs.map((n) => (
               <Card key={n.id}>
                 <div className="flex justify-between items-start gap-2">
-                  <CatTag name={n.category} />
+                  <CatTag name={n.category} categoryOptions={cats} />
                   <StatusPill status={n.status} />
                 </div>
                 <div className="font-semibold text-[13px] text-[#1C2B22] mt-2">{n.title}</div>
@@ -1111,16 +1179,16 @@ function CsrTeamApp({ events, setEvents, needs, setNeeds, approvals, setApproval
           <ScreenHeader title="Budget Tracker" subtitle="FY 2026-27" />
           <BeltStripe />
           <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-            {budgetCategories.map((c) => {
-              const pct = Math.round((c.utilized / c.allocated) * 100);
+            {budgets.map((c) => {
+              const pct = c.allocated ? Math.round((c.utilized / c.allocated) * 100) : 0;
               return (
                 <Card key={c.name}>
                   <div className="flex justify-between items-center">
                     <div className="text-[13px] font-semibold text-[#1C2B22]">{c.name}</div>
-                    <div className="text-[11px] font-bold" style={{ color: catColor(c.name) }}>{pct}%</div>
+                    <div className="text-[11px] font-bold" style={{ color: catColor(c.name, cats) }}>{pct}%</div>
                   </div>
                   <div className="h-1.5 rounded-full mt-2 mb-1.5" style={{ background: COLORS.line }}>
-                    <div className="h-1.5 rounded-full" style={{ background: catColor(c.name), width: `${pct}%` }} />
+                    <div className="h-1.5 rounded-full" style={{ background: catColor(c.name, cats), width: `${pct}%` }} />
                   </div>
                   <div className="flex justify-between text-[11px] text-[#74807A]">
                     <span>Utilized ₹{(c.utilized / 1000).toFixed(0)}K</span>
@@ -1179,9 +1247,9 @@ function Stat({ label, value, icon: Icon, accent }) {
   );
 }
 
-function CreateEventForm({ onBack, onCreate }) {
+function CreateEventForm({ onBack, onCreate, categories = CATS, busy }) {
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState(CATS[0].name);
+  const [category, setCategory] = useState(categories[0]?.name || CATS[0].name);
   const [location, setLocation] = useState("");
   const [date, setDate] = useState("");
   const [volunteersNeeded, setVolunteersNeeded] = useState("10");
@@ -1197,7 +1265,7 @@ function CreateEventForm({ onBack, onCreate }) {
         <div>
           <FieldLabel>CSR category</FieldLabel>
           <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-xl border px-3 py-2.5 text-[13px]" style={{ borderColor: COLORS.line }}>
-            {CATS.map((c) => <option key={c.name}>{c.name}</option>)}
+            {categories.map((c) => <option key={c.name}>{c.name}</option>)}
           </select>
         </div>
         <Field label="Location" value={location} onChange={setLocation} placeholder="Venue / area" />
@@ -1212,17 +1280,12 @@ function CreateEventForm({ onBack, onCreate }) {
       <div className="p-4 border-t" style={{ borderColor: COLORS.line }}>
         <PrimaryButton
           full
-          disabled={!title || !location}
+          disabled={!title || !location || busy}
           onClick={() =>
             onCreate({
-              id: "EV-" + Math.floor(Math.random() * 900 + 100),
-              title, category, location, date: date || "TBD", time: "TBD",
-              status: "Submitted for Approval",
+              title, category, location, date: date || "", time: "TBD",
               volunteersNeeded: Number(volunteersNeeded) || 10,
-              confirmed: 0, beneficiaries: 0,
-              budget: Number(budget) || 0, utilized: 0,
-              coordinator: "Lakshmi Narayanan", objective: objective || "—",
-              applicants: [],
+              objective: objective || "—",
             })
           }
         >
@@ -1233,7 +1296,7 @@ function CreateEventForm({ onBack, onCreate }) {
   );
 }
 
-function AddEmployeeForm({ onBack, onSave }) {
+function AddEmployeeForm({ onBack, onSave, busy }) {
   const [empId, setEmpId] = useState("");
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
@@ -1284,7 +1347,7 @@ function AddEmployeeForm({ onBack, onSave }) {
         <PrimaryButton
           full
           icon={CheckCircle2}
-          disabled={!empId || !name || !department}
+          disabled={!empId || !name || !department || !email || busy}
           onClick={() =>
             onSave({
               empId, name, mobile: mobile || "—", email: email || "—",
@@ -1303,21 +1366,35 @@ function AddEmployeeForm({ onBack, onSave }) {
 /* ---------------------------------------------------------------
    MANAGEMENT PERSONA
 ----------------------------------------------------------------*/
-function ManagementApp({ approvals, setApprovals, events }) {
+function ManagementApp({ approvals, events, budgetCategories, categoryOptions, approverId, onApprovalDecision }) {
   const [tab, setTab] = useState("dashboard");
+  const [busy, setBusy] = useState(false);
 
-  const totalAllocated = budgetCategories.reduce((s, c) => s + c.allocated, 0);
-  const totalUtilized = budgetCategories.reduce((s, c) => s + c.utilized, 0);
+  const budgets = budgetCategories?.length ? budgetCategories : fallbackBudgetCategories;
+  const cats = categoryOptions?.length ? categoryOptions : CATS;
+  const totalAllocated = budgets.reduce((s, c) => s + c.allocated, 0);
+  const totalUtilized = budgets.reduce((s, c) => s + c.utilized, 0);
   const pending = approvals.filter((a) => a.status === "Pending");
 
   const activityByCat = useMemo(() => {
     const m = {};
     events.forEach((e) => { m[e.category] = (m[e.category] || 0) + 1; });
-    return CATS.map((c) => ({ name: c.name, value: m[c.name] || 0, color: c.color })).filter((d) => d.value > 0);
-  }, [events]);
+    return cats.map((c) => ({ name: c.name, value: m[c.name] || 0, color: c.color })).filter((d) => d.value > 0);
+  }, [events, cats]);
 
-  function decide(id, status) {
-    setApprovals((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
+  async function decide(item, status) {
+    if (!approverId) {
+      alert("No approver configured");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onApprovalDecision(item, status);
+    } catch (err) {
+      alert(err.message || "Approval failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -1337,7 +1414,7 @@ function ManagementApp({ approvals, setApprovals, events }) {
             <Card>
               <div className="font-bold text-[13px] text-[#1C2B22] mb-2">Budget: allocated vs utilized (₹L)</div>
               <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={budgetCategories.map((c) => ({ name: c.name.split(" ")[0], allocated: c.allocated / 100000, utilized: c.utilized / 100000 }))}>
+                <BarChart data={budgets.map((c) => ({ name: c.name.split(" ")[0], allocated: c.allocated / 100000, utilized: c.utilized / 100000 }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke={COLORS.line} vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 9, fill: COLORS.muted }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 9, fill: COLORS.muted }} axisLine={false} tickLine={false} />
@@ -1385,8 +1462,8 @@ function ManagementApp({ approvals, setApprovals, events }) {
                 <div className="text-[11px] text-[#74807A] mt-1">₹{a.amount.toLocaleString("en-IN")} · Requested by {a.requestedBy}</div>
                 {a.status === "Pending" && (
                   <div className="flex gap-2 mt-2.5">
-                    <PrimaryButton onClick={() => decide(a.id, "Approved")} icon={CheckCircle2}>Approve</PrimaryButton>
-                    <GhostButton tone="danger" onClick={() => decide(a.id, "Rejected")} icon={XCircle}>Reject</GhostButton>
+                    <PrimaryButton disabled={busy} onClick={() => decide(a, "Approved")} icon={CheckCircle2}>Approve</PrimaryButton>
+                    <GhostButton disabled={busy} tone="danger" onClick={() => decide(a, "Rejected")} icon={XCircle}>Reject</GhostButton>
                   </div>
                 )}
               </Card>
@@ -1432,11 +1509,14 @@ function ManagementApp({ approvals, setApprovals, events }) {
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [role, setRole] = useState("volunteer");
-  const [events, setEvents] = useState(initialEvents);
-  const [needs, setNeeds] = useState(initialNeeds);
-  const [approvals, setApprovals] = useState(initialApprovals);
-  const [employees, setEmployees] = useState(initialEmployees);
-  const [notifications] = useState(initialNotifications);
+  const csr = useCsrData();
+
+  useEffect(() => {
+    if (loggedIn) csr.loadAll();
+  }, [loggedIn]);
+
+  const coordinator = csr.employees.find((e) => e.empId === "PI-00871") || csr.employees[0];
+  const approver = coordinator;
 
   const roles = [
     { key: "volunteer", label: "Volunteer" },
@@ -1446,12 +1526,46 @@ export default function App() {
 
   const screen = !loggedIn ? (
     <LoginScreen onLogin={() => setLoggedIn(true)} />
+  ) : csr.loading && csr.events.length === 0 ? (
+    <div className="h-full flex flex-col items-center justify-center gap-3" style={{ background: COLORS.bg }}>
+      <div className="text-[13px] font-semibold" style={{ color: COLORS.primary }}>Loading from API…</div>
+      {csr.error && <div className="text-[11px] text-center px-6" style={{ color: COLORS.danger }}>{csr.error}</div>}
+    </div>
   ) : role === "volunteer" ? (
-    <VolunteerApp events={events} setEvents={setEvents} needs={needs} setNeeds={setNeeds} notifications={notifications} setNotifications={() => {}} />
+    <VolunteerApp
+      events={csr.events}
+      needs={csr.needs}
+      notifications={csr.notifications}
+      currentUser={csr.currentUser}
+      categoryOptions={csr.categoryOptions}
+      leaderboard={csr.leaderboard}
+      onRegister={csr.handleRegister}
+      onWithdraw={csr.handleWithdraw}
+      onSubmitNeed={(form) => csr.handleSubmitNeed(form, csr.categoryOptions)}
+    />
   ) : role === "csrteam" ? (
-    <CsrTeamApp events={events} setEvents={setEvents} needs={needs} setNeeds={setNeeds} approvals={approvals} setApprovals={setApprovals} employees={employees} setEmployees={setEmployees} />
+    <CsrTeamApp
+      events={csr.events}
+      needs={csr.needs}
+      approvals={csr.approvals}
+      employees={csr.employees}
+      budgetCategories={csr.budgetCategories}
+      categoryOptions={csr.categoryOptions}
+      coordinatorId={coordinator?.id}
+      onNeedStatus={csr.handleNeedStatus}
+      onApplicantStatus={csr.handleApplicantStatus}
+      onCreateEvent={(form) => csr.handleCreateEvent(form, csr.categoryOptions, coordinator?.id)}
+      onAddEmployee={csr.handleAddEmployee}
+    />
   ) : (
-    <ManagementApp approvals={approvals} setApprovals={setApprovals} events={events} />
+    <ManagementApp
+      approvals={csr.approvals}
+      events={csr.events}
+      budgetCategories={csr.budgetCategories}
+      categoryOptions={csr.categoryOptions}
+      approverId={approver?.id}
+      onApprovalDecision={(item, status) => csr.handleApprovalDecision(item, status, approver?.id)}
+    />
   );
 
   return (
@@ -1481,7 +1595,7 @@ export default function App() {
         >
           <RoleSwitcher role={role} setRole={setRole} roles={roles} compact />
           <div className="text-center text-[10px] pb-1.5 px-3" style={{ color: COLORS.muted }}>
-            Demo data · refreshes reset state
+            Live data · {csr.error ? "API error" : "connected to backend"}
           </div>
         </div>
       )}

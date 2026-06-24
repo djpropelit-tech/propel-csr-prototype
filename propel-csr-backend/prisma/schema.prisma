@@ -1,0 +1,311 @@
+// Propel CSR Activity Management — Phase 1 / MVP data model
+// Maps directly to BRD Section 10 (Suggested Data Entities)
+// Run `npx prisma migrate dev` after pointing DATABASE_URL at a real Postgres instance.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  VOLUNTEER
+  COORDINATOR
+  CSR_ADMIN
+  MANAGEMENT
+  FINANCE
+}
+
+enum EventStatus {
+  DRAFT
+  SUBMITTED_FOR_APPROVAL
+  UNDER_REVIEW
+  BUDGET_PENDING
+  APPROVED
+  PUBLISHED
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  ONGOING
+  COMPLETED
+  CLOSURE_PENDING
+  CLOSED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  APPLIED
+  WAITLISTED
+  CONFIRMED
+  WITHDRAWN
+  ATTENDED
+  NO_SHOW
+  CANCELLED
+}
+
+enum BudgetStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  UTILIZATION_SUBMITTED
+  FINANCE_VERIFIED
+  CLOSED
+}
+
+enum NeedStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED_FOR_PROPOSAL
+  REJECTED
+  CONVERTED_TO_PROPOSAL
+  CLOSED
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Employee {
+  id              String   @id @default(cuid())
+  empId           String   @unique
+  name            String
+  mobile          String
+  email           String   @unique
+  department      String
+  location        String
+  designation     String
+  reportingManager String?
+  role            Role     @default(VOLUNTEER)
+  createdAt       DateTime @default(now())
+
+  volunteerProfile VolunteerProfile?
+  coordinatedEvents CSREvent[] @relation("EventCoordinator")
+  approvalActions  ApprovalHistory[]
+  auditLogs        AuditLog[]
+}
+
+model VolunteerProfile {
+  id                String   @id @default(cuid())
+  employee          Employee @relation(fields: [employeeId], references: [id])
+  employeeId        String   @unique
+  preferredCategories String[] // CSR category names
+  availability      String?
+  emergencyContact  String?
+  skills            String?
+  totalHours        Float    @default(0)
+  recognitionPoints Int      @default(0)
+  createdAt         DateTime @default(now())
+
+  registrations EventVolunteerRegistration[]
+}
+
+model CSRCategory {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String?
+  annualBudget  Float    @default(0)
+  budgetUtilized Float   @default(0)
+
+  needs      CommunityNeed[]
+  proposals  CSRProposal[]
+  events     CSREvent[]
+  budgetRequests BudgetRequest[]
+}
+
+model CommunityNeed {
+  id            String      @id @default(cuid())
+  title         String
+  description   String
+  category      CSRCategory @relation(fields: [categoryId], references: [id])
+  categoryId    String
+  location      String
+  beneficiaryGroup String?
+  contactPerson String?
+  estBeneficiaries Int      @default(0)
+  estBudget     Float       @default(0)
+  urgency       Urgency     @default(MEDIUM)
+  submittedBy   String
+  status        NeedStatus  @default(SUBMITTED)
+  createdAt     DateTime    @default(now())
+
+  proposal CSRProposal?
+  attachments DocumentAttachment[]
+}
+
+model CSRProposal {
+  id            String       @id @default(cuid())
+  title         String
+  need          CommunityNeed? @relation(fields: [needId], references: [id])
+  needId        String?      @unique
+  category      CSRCategory  @relation(fields: [categoryId], references: [id])
+  categoryId    String
+  objective     String
+  proposedSolution String?
+  eventType     String
+  location      String
+  plannedDate   DateTime?
+  expectedVolunteers Int     @default(0)
+  expectedBeneficiaries Int  @default(0)
+  estimatedBudget Float      @default(0)
+  coordinatorId String?
+  status        String       @default("Draft")
+  createdAt     DateTime     @default(now())
+
+  event CSREvent?
+}
+
+model CSREvent {
+  id              String      @id @default(cuid())
+  proposal        CSRProposal? @relation(fields: [proposalId], references: [id])
+  proposalId      String?     @unique
+  title           String
+  category        CSRCategory @relation(fields: [categoryId], references: [id])
+  categoryId      String
+  objective       String?
+  location        String
+  date            DateTime
+  time            String?
+  status          EventStatus @default(DRAFT)
+  volunteersNeeded Int        @default(0)
+  expectedBeneficiaries Int   @default(0)
+  actualBeneficiaries   Int   @default(0)
+  coordinator     Employee    @relation("EventCoordinator", fields: [coordinatorId], references: [id])
+  coordinatorId   String
+  createdAt       DateTime    @default(now())
+
+  registrations    EventVolunteerRegistration[]
+  attendances      VolunteerAttendance[]
+  budgetRequests   BudgetRequest[]
+  completionReport EventCompletionReport?
+  attachments      DocumentAttachment[]
+}
+
+model EventVolunteerRegistration {
+  id          String   @id @default(cuid())
+  event       CSREvent @relation(fields: [eventId], references: [id])
+  eventId     String
+  volunteer   VolunteerProfile @relation(fields: [volunteerId], references: [id])
+  volunteerId String
+  role        String?
+  status      RegistrationStatus @default(APPLIED)
+  appliedAt   DateTime @default(now())
+
+  @@unique([eventId, volunteerId])
+}
+
+model VolunteerAttendance {
+  id          String   @id @default(cuid())
+  event       CSREvent @relation(fields: [eventId], references: [id])
+  eventId     String
+  volunteerName String
+  checkIn     DateTime?
+  checkOut    DateTime?
+  hours       Float     @default(0)
+  status      String    @default("Present")
+  remarks     String?
+}
+
+model BudgetRequest {
+  id            String       @id @default(cuid())
+  event         CSREvent?    @relation(fields: [eventId], references: [id])
+  eventId       String?
+  category      CSRCategory  @relation(fields: [categoryId], references: [id])
+  categoryId    String
+  requestedAmount Float
+  expenseHead   String?
+  justification String?
+  requestedBy   String
+  status        BudgetStatus @default(SUBMITTED)
+  createdAt     DateTime     @default(now())
+
+  utilizations BudgetUtilization[]
+}
+
+model BudgetUtilization {
+  id            String   @id @default(cuid())
+  request       BudgetRequest @relation(fields: [requestId], references: [id])
+  requestId     String
+  amountSpent   Float
+  expenseLineItem String?
+  expenseDate   DateTime?
+  vendorName    String?
+  invoiceNumber String?
+  paymentStatus String?  @default("Pending")
+  remarks       String?
+  createdAt     DateTime @default(now())
+}
+
+model EventCompletionReport {
+  id              String   @id @default(cuid())
+  event           CSREvent @relation(fields: [eventId], references: [id])
+  eventId         String   @unique
+  actualVolunteerCount Int @default(0)
+  actualBeneficiaryCount Int @default(0)
+  volunteerHours  Float    @default(0)
+  outcome         String?
+  challenges      String?
+  lessonsLearned  String?
+  budgetUtilized  Float    @default(0)
+  status          String   @default("Submitted")
+  createdAt       DateTime @default(now())
+}
+
+model RecognitionAward {
+  id          String   @id @default(cuid())
+  volunteerName String
+  type        String   // Digital badge / Volunteer of the Month / CSR Champion etc.
+  criteria    String?
+  awardedAt   DateTime @default(now())
+}
+
+model ApprovalHistory {
+  id          String   @id @default(cuid())
+  entityType  String   // "CommunityNeed" | "CSRProposal" | "BudgetRequest" | "EventCompletionReport"
+  entityId    String
+  approver    Employee @relation(fields: [approverId], references: [id])
+  approverId  String
+  action      String   // Approve / Reject / Return for correction / Request info
+  previousStatus String?
+  newStatus   String?
+  comments    String?
+  createdAt   DateTime @default(now())
+}
+
+model DocumentAttachment {
+  id          String   @id @default(cuid())
+  fileName    String
+  fileUrl     String
+  uploadedBy  String?
+  need        CommunityNeed? @relation(fields: [needId], references: [id])
+  needId      String?
+  event       CSREvent?      @relation(fields: [eventId], references: [id])
+  eventId     String?
+  createdAt   DateTime @default(now())
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  recipient   String
+  text        String
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actor       Employee @relation(fields: [actorId], references: [id])
+  actorId     String
+  action      String
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+}

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: propel-csr-api
+    runtime: node
+    rootDir: propel-csr-backend
+    buildCommand: npm install && npm run build && npm run deploy:db
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NODE_VERSION
+        value: 22.15.1

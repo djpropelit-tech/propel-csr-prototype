@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: propel-csr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: propel
+      POSTGRES_PASSWORD: propel
+      POSTGRES_DB: propel_csr
+    ports:
+      - "5432:5432"
+    volumes:
+      - propel_csr_pgdata:/var/lib/postgresql/data
+
+volumes:
+  propel_csr_pgdata:

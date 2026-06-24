@@ -90,6 +90,81 @@ Drag the `dist/` folder onto [app.netlify.com/drop](https://app.netlify.com/drop
 | `npm run build:netlify` | Netlify / public internet (site root `/`) |
 | `npm run preview:netlify` | Test the Netlify build locally before deploying |
 
+## Go live for testers (full stack)
+
+Your app has **two parts** that must both be public:
+
+```mermaid
+flowchart LR
+  Tester[Tester phone/browser]
+  Netlify[Netlify - React UI]
+  API[Hosted Node API]
+  Neon[(Neon PostgreSQL)]
+
+  Tester --> Netlify
+  Netlify -->|VITE_API_URL| API
+  API --> Neon
+```
+
+| Piece | Where | Status |
+|---|---|---|
+| Database | **Neon** | You already set this up |
+| Backend API | **Render** (or Railway) | Deploy once — see below |
+| Frontend | **Netlify** | Already configured — add API URL env var |
+
+### Step 1 — Deploy the API (Render)
+
+1. Push the repo to **GitHub** (include `propel-csr-backend/` and [`render.yaml`](render.yaml)).
+2. Go to [render.com](https://render.com) → **New** → **Blueprint** (or **Web Service**).
+3. Connect the repo. If using the blueprint, Render reads `render.yaml`.
+4. Set environment variable:
+   - **`DATABASE_URL`** = your Neon connection string (same as in `propel-csr-backend/.env`)
+5. Deploy. When finished, note the URL, e.g. **`https://propel-csr-api.onrender.com`**
+6. Verify: open `https://YOUR-API.onrender.com/health` — should return `{"status":"ok",...}`
+
+**Manual Render setup** (without blueprint):
+
+| Setting | Value |
+|---|---|
+| Root directory | `propel-csr-backend` |
+| Build command | `npm install && npm run build && npm run deploy:db` |
+| Start command | `npm start` |
+| Env | `DATABASE_URL` = Neon connection string |
+
+> Free Render services sleep after inactivity; the first request may take ~30 seconds to wake up.
+
+### Step 2 — Point Netlify at the API
+
+1. Open your site on [app.netlify.com](https://app.netlify.com).
+2. **Site configuration** → **Environment variables** → **Add a variable**:
+   - **Key:** `VITE_API_URL`
+   - **Value:** `https://propel-csr-api.onrender.com` (your Render URL, no trailing slash)
+3. **Deploys** → **Trigger deploy** → **Deploy site** (rebuild required so Vite picks up the variable).
+
+### Step 3 — Share the link
+
+Give testers your Netlify URL, e.g.:
+
+**`https://propel-csr.netlify.app`**
+
+Works on phones and desktops. They tap **Continue**, switch roles, and data is shared via Neon (not just on your PC).
+
+### Office-only testing (no public cloud API)
+
+If testers are on the **same office Wi‑Fi** only:
+
+- Frontend: WAMP or `npm run preview` on your PC IP
+- Backend: `npm run dev` on your PC (port 4000)
+- Set `VITE_API_URL=http://YOUR-PC-IP:4000` when building
+
+This does not work for people outside your network.
+
+### Before sharing widely
+
+- API has **no login** — anyone with the link can use it (OK for internal pilot).
+- Rotate Neon password if `.env` was ever shared or committed.
+- Consider a custom Netlify subdomain (e.g. `propel-csr.netlify.app`) under **Domain management**.
+
 ## Build for deployment
 
 ```bash
