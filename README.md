@@ -49,46 +49,46 @@ To add a home-screen icon: use the browser’s **Add to Home Screen** option (ma
 
 After code changes, run `npm run build` again before sharing updates.
 
-## Deploy to GitHub Pages (public internet)
+## Deploy to Netlify (public internet)
 
-The repo includes a GitHub Actions workflow that builds and publishes the app automatically.
+Netlify is simpler than GitHub Pages — connect your Git repo and it builds and hosts automatically with HTTPS.
 
-### One-time setup on GitHub
+### Option A — Connect GitHub repo (recommended)
 
-1. Install [Git](https://git-scm.com/download/win) if you do not have it yet.
-2. Create a new repository on GitHub named **`propel-csr-prototype`** (the name must match the `base` path in `vite.config.js`).
-3. Push this project to that repo (see commands below).
-4. On GitHub, open the repo → **Settings** → **Pages**.
-5. Under **Build and deployment**, set **Source** to **GitHub Actions** (not “Deploy from a branch”).
-6. After the first push to `main`, open **Actions** and wait for the “Deploy to GitHub Pages” workflow to finish.
+1. Push this project to GitHub (if not already):
+   ```bash
+   cd c:\wamp64\www\propel-csr-prototype
+   git add .
+   git commit -m "Configure Netlify deployment"
+   git push
+   ```
+2. Go to [app.netlify.com](https://app.netlify.com) and sign up / log in.
+3. Click **Add new site** → **Import an existing project**.
+4. Choose **GitHub** and select your `propel-csr-prototype` repo.
+5. Netlify reads [`netlify.toml`](netlify.toml) automatically:
+   - **Build command:** `npm run build:netlify`
+   - **Publish directory:** `dist`
+6. Click **Deploy site**.
 
-Your public URL will be:
+After 1–2 minutes you get a URL like **`https://random-name-123.netlify.app`**. You can rename it under **Site configuration → Domain management** (e.g. `propel-csr.netlify.app`).
 
-**https://YOUR-GITHUB-USERNAME.github.io/propel-csr-prototype/**
+Every `git push` to `main` redeploys automatically.
 
-Replace `YOUR-GITHUB-USERNAME` with your GitHub username or organization name. Share that link — it works on phones and desktops over the internet with HTTPS.
-
-### Push the project to GitHub (first time)
+### Option B — Manual deploy (no Git on Netlify)
 
 ```bash
-cd c:\wamp64\www\propel-csr-prototype
-git init
-git add .
-git commit -m "Initial commit: Propel CSR mobile prototype"
-git branch -M main
-git remote add origin https://github.com/YOUR-GITHUB-USERNAME/propel-csr-prototype.git
-git push -u origin main
+npm run build:netlify
 ```
+
+Drag the `dist/` folder onto [app.netlify.com/drop](https://app.netlify.com/drop).
 
 ### Build commands
 
 | Command | Use for |
 |---|---|
 | `npm run build` | WAMP intranet (`/propel-csr-prototype/dist/`) |
-| `npm run build:pages` | GitHub Pages (`/propel-csr-prototype/`) |
-| `npm run preview:pages` | Test the GitHub Pages build locally before pushing |
-
-If you rename the GitHub repo, update the `pages` base path in [`vite.config.js`](vite.config.js) to `"/your-repo-name/"`.
+| `npm run build:netlify` | Netlify / public internet (site root `/`) |
+| `npm run preview:netlify` | Test the Netlify build locally before deploying |
 
 ## Build for deployment
 
